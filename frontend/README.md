@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Sahaya Tech — Complete Citizen Module
 
-## Getting Started
+Smart India Hackathon 2026 · Problem Statement 26043
 
-First, run the development server:
+## Included
+- Citizen dashboard / home
+- Weekly submission limit: 3 problem statements per citizen per week
+- Weekly usage meter and Monday reset message
+- Five-step challenge submission flow
+- Natural-language title + description
+- Citizen-selected priority
+- Location: district, village/town/ward, specific location, landmark, optional device coordinates
+- Photo/video evidence with a strict maximum of 3 combined files per problem statement
+- Voice message recording with browser microphone + audio upload fallback
+- Supporting document upload
+- Community impact: affected population, groups and impact areas
+- Review before submission
+- Mock AI-assisted analysis: domain, category, priority assistance, duplicate candidates, jurisdiction and capabilities
+- Challenge ID and submission success state
+- My Challenges with full lifecycle timeline
+- Community Challenges with search, filters and sorting
+- Community support signal (explicitly not an automatic priority score)
+- Challenge details, evidence summary and privacy information
+- Notifications
+- Citizen profile and submission policy
+- Responsive mobile/tablet/desktop layouts
 
+## Run
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Prototype storage
+Citizen submissions are stored in browser localStorage under `sahaya_citizen_submissions`.
+Media files are previewed locally during the session; a production implementation should replace this with the planned file-storage/API layer.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Weekly rule
+The prototype constant is `CITIZEN_WEEKLY_LIMIT = 3`. The count is per citizen and uses Monday–Sunday weeks.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Latest update: University + Citizen cleanup
 
-## Learn More
+### University module
+- University Innovation Hub at `/university`.
+- Validated problems needing implementation at `/university/problems`.
+- Implemented/past problems at `/university/implemented`.
+- Capability/profile completion at `/university/profile`.
+- University registration at `/register/university` includes institutional details and separate document upload sections for past solved problems/projects, licenses & registrations, certifications, and awards/recognition.
+- After registration, the confirmation view shows a 72% prototype profile-completion progress state.
 
-To learn more about Next.js, take a look at the following resources:
+### Citizen submission cleanup
+The Citizen report flow no longer contains the Community Impact step or its affected-population/impact-area fields. The flow is now:
+1. Describe
+2. Location
+3. Evidence
+4. Review & Submit
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Voice messages, supporting documents, and the maximum 3 combined photo/video evidence rule remain supported.

@@ -1,0 +1,363 @@
+import React, { createContext, useContext, useMemo, useRef, useState } from "react";
+import { createRoot } from "react-dom/client";
+import { BrowserRouter, Navigate, Route, Routes, Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import "./styles.css";
+import { mockUsers } from "./mock/users";
+import { mockOrganizations } from "./mock/organizations";
+import { mockChallenges } from "./mock/challenges";
+import { mockProjects } from "./mock/projects";
+import { mockNotifications } from "./mock/notifications";
+
+const CITIZEN_WEEKLY_LIMIT = 3;
+const CHALLENGE_LIFECYCLE = [
+  "Submitted", "Screening", "Government validation", "Resolution pathway",
+  "Matching", "Solution development", "Pilot", "Implementation", "Impact"
+];
+
+const AuthContext = createContext(null);
+
+function AuthProvider({ children }) {
+  const [user, setUser] = useState(() => {
+    const saved = localStorage.getItem("sahaya_user");
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  const loginAs = (role) => {
+    const demoUser = mockUsers.find((u) => u.role === role);
+    if (!demoUser) return;
+    setUser(demoUser);
+    localStorage.setItem("sahaya_user", JSON.stringify(demoUser));
+  };
+
+  const logout = () => {
+    setUser(null);
+    localStorage.removeItem("sahaya_user");
+  };
+
+  const value = useMemo(() => ({
+    user,
+    loginAs,
+    logout,
+    data: { mockUsers, mockOrganizations, mockChallenges, mockProjects, mockNotifications }
+  }), [user]);
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+function useAuth() { return useContext(AuthContext); }
+
+function RoleGuard({ allowed, children }) {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  if (!allowed.includes(user.role)) return <Navigate to="/unauthorized" replace />;
+  return children;
+}
+
+const roleLabels = {
+  citizen: "Citizen",
+  government: "Government",
+  university: "University / HEI",
+  startup: "Startup",
+  industry: "Industry"
+};
+
+function AppShell({ children }) {
+  const { user, logout } = useAuth();
+  const location = useLocation();
+  const role = user?.role;
+
+  const navItems = role === "citizen"
+    ? [
+        { label: "Home", path: "/citizen" },
+        { label: "Report a Problem", path: "/citizen/report" },
+        { label: "Community Challenges", path: "/citizen/challenges" },
+        { label: "My Challenges", path: "/citizen/my-challenges" },
+        { label: "Notifications", path: "/citizen/notifications" },
+        { label: "Profile", path: "/citizen/profile" }
+      ]
+    : role ? [
+        { label: "Workspace Home", path: `/${role}` },
+        { label: "Challenges", path: `/${role}/challenges` },
+        { label: "Projects", path: `/${role}/projects` },
+        { label: "Notifications", path: `/${role}/notifications` }
+      ] : [];
+
+  return (
+    <div className={`app-shell ${role ? `role-${role}` : ""}`}>
+      <header className="topbar">
+        <Link className="brand" to={role ? `/${role}` : "/login"}>
+          <span className="brand-mark">S</span>
+          <span><strong>Sahaya</strong><small>Societal Innovation Network</small></span>
+        </Link>
+        {user && <div className="topbar-right"><span className="role-pill">{roleLabels[role]}</span><button className="ghost-button" onClick={logout}>Logout</button></div>}
+      </header>
+
+      {user && <aside className="sidebar">
+        <div className="workspace-title">{roleLabels[role]}</div>
+        <nav aria-label="Workspace navigation">
+          {navItems.map((item) => <Link key={item.path} className={`nav-link ${location.pathname === item.path ? "active" : ""}`} to={item.path}>{item.label}</Link>)}
+        </nav>
+        <div className="sidebar-note"><strong>Prototype mode</strong><p>Mock authentication and data only. Citizen submissions are stored locally in this browser.</p></div>
+      </aside>}
+
+      <main className={user ? "main-content with-sidebar" : "main-content"}>{children}</main>
+      <footer className="footer"><span>© 2026 Sahaya Tech</span><span>SIH 2026 · Problem Statement 26043</span></footer>
+    </div>
+  );
+}
+
+function LoginPage() {
+  const { loginAs } = useAuth();
+  const navigate = useNavigate();
+  const [role, setRole] = useState("citizen");
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const submit = (e) => { e.preventDefault(); loginAs(role); navigate(`/${role}`); };
+
+  return <section className="auth-page">
+    <div className="auth-hero">
+      <div className="eyebrow">SMART INDIA HACKATHON 2026 · PS 26043</div>
+      <h1>One ecosystem for societal problems, collaboration and measurable impact.</h1>
+      <p>Citizens surface challenges. Government validates and routes them. Universities solve. Startups build. Industry enables scale.</p>
+      <div className="flow-strip"><span>Problem</span><b>→</b><span>Validation</span><b>→</b><span>Collaboration</span><b>→</b><span>Solution</span><b>→</b><span>Impact</span></div>
+    </div>
+    <div className="auth-card">
+      <div className="card-heading"><span className="brand-mark large">S</span><div><h2>Sign in to Sahaya</h2><p>Choose a role for the frontend demo.</p></div></div>
+      <form onSubmit={submit}>
+        <label>Email / Mobile<input value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="you@example.com" required /></label>
+        <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required /></label>
+        <div className="form-row"><label className="checkbox"><input type="checkbox" /> Remember me</label><button type="button" className="text-button">Forgot password?</button></div>
+        <label>Demo Login As<select value={role} onChange={(e) => setRole(e.target.value)}>{Object.entries(roleLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <button className="primary-button full" type="submit">Login</button>
+      </form>
+      <div className="divider"><span>New to Sahaya?</span></div>
+      <Link className="secondary-button full" to={`/register/${role}`}>Create {roleLabels[role]} account</Link>
+      <p className="demo-hint">Any credentials are accepted in prototype mode; the selected role controls the mock session.</p>
+    </div>
+  </section>;
+}
+
+const registrationFields = {
+  citizen: [["name", "Full name", "text"], ["contact", "Email / mobile", "text"], ["district", "District", "text"], ["password", "Password", "password"]],
+  government: [["authority", "Department / authority", "text"], ["jurisdiction", "Jurisdiction", "text"], ["email", "Official email", "email"], ["designation", "Designation", "text"], ["password", "Password", "password"]],
+  university: [["institution", "Institution name", "text"], ["type", "University type", "text"], ["state", "State", "text"], ["district", "District", "text"], ["email", "Official email", "email"], ["admin", "Admin name", "text"], ["domains", "Domains / capabilities", "text"], ["password", "Password", "password"]],
+  startup: [["name", "Startup name", "text"], ["domain", "Industry / domain", "text"], ["hq", "Headquarters", "text"], ["email", "Official email", "email"], ["representative", "Representative", "text"], ["capabilities", "Capabilities", "text"], ["documents", "Related documents", "file"], ["password", "Password", "password"]],
+  industry: [["company", "Company name", "text"], ["sector", "Industry sector", "text"], ["location", "Location", "text"], ["email", "Official email", "email"], ["representative", "Representative", "text"], ["capabilities", "Capabilities", "text"], ["csr", "CSR / innovation interests", "text"], ["password", "Password", "password"]]
+};
+
+function RegisterPage() {
+  const { loginAs } = useAuth(); const navigate = useNavigate(); const { pathname } = useLocation();
+  const role = pathname.split("/").pop(); const fields = registrationFields[role] || registrationFields.citizen; const [submitted, setSubmitted] = useState(false);
+  if (submitted) return <section className="center-page"><div className="success-card"><div className="success-icon">✓</div><h1>Registration submitted</h1><p>Your <strong>{roleLabels[role]}</strong> account is now in <strong>Verification pending</strong> mock state.</p><div className="button-row"><button className="primary-button" onClick={() => { loginAs(role); navigate(`/${role}`); }}>Continue to demo workspace</button><Link className="secondary-button" to="/login">Back to login</Link></div></div></section>;
+  return <section className="form-page"><div className="page-intro"><div className="eyebrow">ACCOUNT REGISTRATION</div><h1>Create a {roleLabels[role]} account</h1><p>Organization-aware onboarding keeps identities, capabilities and permissions separate.</p></div><form className="registration-card" onSubmit={(e) => { e.preventDefault(); setSubmitted(true); }}>{fields.map(([name, label, type]) => <label key={name}>{label}{type === "file" ? <input type="file" /> : <input name={name} type={type} required />}</label>)}<div className="privacy-note"><strong>Privacy by design:</strong> personal contact details and private documents are not exposed on public challenge views.</div><button className="primary-button full" type="submit">Submit registration</button><Link className="secondary-button full" to="/login">Back to login</Link></form></section>;
+}
+
+function getCitizenSubmissions() {
+  try { return JSON.parse(localStorage.getItem("sahaya_citizen_submissions") || "[]"); } catch { return []; }
+}
+function saveCitizenSubmissions(items) { localStorage.setItem("sahaya_citizen_submissions", JSON.stringify(items)); }
+function startOfWeek(date = new Date()) { const d = new Date(date); const day = d.getDay(); const diff = day === 0 ? -6 : 1 - day; d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + diff); return d; }
+function weeklySubmissionCount(items) { const start = startOfWeek(); return items.filter((item) => new Date(item.createdAt) >= start).length; }
+function lifecycleIndex(status) {
+  const normalized = status.toLowerCase();
+  const idx = CHALLENGE_LIFECYCLE.findIndex((step) => normalized.includes(step.toLowerCase()));
+  return idx >= 0 ? idx : 0;
+}
+
+function CitizenHome() {
+  const { user, data } = useAuth();
+  const [submissions, setSubmissions] = useState(getCitizenSubmissions);
+  const weekCount = weeklySubmissionCount(submissions);
+  const remaining = Math.max(CITIZEN_WEEKLY_LIMIT - weekCount, 0);
+  const ownedMock = data.mockChallenges.find((c) => c.submittedBy === user.id);
+  const latest = submissions[0];
+  const progressChallenge = latest || ownedMock;
+  const visibleChallenges = data.mockChallenges.filter((c) => c.visibleTo.includes("citizen"));
+
+  return <section className="workspace citizen-home">
+    <div className="workspace-header">
+      <div><div className="eyebrow">CITIZEN HUB</div><h1>Welcome back, {user.name.split(" ")[0]}</h1><p>Report a community problem and follow what happens to it, step by step.</p></div>
+      <Link className="primary-button" to="/citizen/report">+ Submit a Problem</Link>
+    </div>
+
+    <div className="limit-banner"><div><strong>Weekly submission limit</strong><span>You can submit up to {CITIZEN_WEEKLY_LIMIT} problem statements per week.</span></div><div className="limit-meter"><strong>{weekCount}/{CITIZEN_WEEKLY_LIMIT}</strong><div><span style={{ width: `${Math.min((weekCount / CITIZEN_WEEKLY_LIMIT) * 100, 100)}%` }} /></div><small>{remaining > 0 ? `${remaining} submission${remaining === 1 ? "" : "s"} remaining this week` : "Weekly limit reached — try again next week"}</small></div></div>
+
+    <div className="citizen-actions"><Link className="action-card" to={remaining > 0 ? "/citizen/report" : "#"} onClick={(e) => { if (remaining === 0) e.preventDefault(); }}><span className="action-icon">＋</span><div><strong>Report a Problem</strong><p>Describe the issue, add priority and evidence.</p></div><b>→</b></Link><Link className="action-card" to="/citizen/challenges"><span className="action-icon">⌕</span><div><strong>Explore Community Challenges</strong><p>See public challenges and where they stand.</p></div><b>→</b></Link></div>
+
+    <div className="citizen-grid">
+      <section className="panel">
+        <div className="panel-heading"><h2>My submitted problems</h2><Link className="text-link" to="/citizen/my-challenges">View all</Link></div>
+        <div className="citizen-status-cards"><StatusMini label="Submitted" value={submissions.length + (ownedMock ? 1 : 0)} /><StatusMini label="Under Review" value={submissions.filter(s => lifecycleIndex(s.status) <= 2).length} /><StatusMini label="In Progress" value={submissions.filter(s => lifecycleIndex(s.status) >= 3 && lifecycleIndex(s.status) < 8).length + (ownedMock ? 1 : 0)} /><StatusMini label="Resolved" value={submissions.filter(s => s.status === "Resolved").length} /></div>
+        {progressChallenge ? <ChallengeProgress challenge={progressChallenge} /> : <EmptyState title="You haven't submitted any challenges yet." text="Your submitted problem statements and their progress will appear here." action="Report a Problem" href="/citizen/report" />}
+      </section>
+
+      <section className="panel">
+        <div className="panel-heading"><h2>Community challenges</h2><span>{visibleChallenges.length} available</span></div>
+        <div className="challenge-list">{visibleChallenges.slice(0, 4).map((c) => <div className="challenge-row" key={c.id}><div><strong>{c.title}</strong><p>{c.district} · {c.affectedPopulation.toLocaleString()} people affected</p></div><span className={`priority ${c.priority.toLowerCase()}`}>{c.priority}</span></div>)}</div>
+        <Link className="secondary-button full" to="/citizen/challenges">Explore all challenges</Link>
+      </section>
+    </div>
+  </section>;
+}
+
+function StatusMini({ label, value }) { return <div className="status-mini"><span>{label}</span><strong>{value}</strong></div>; }
+function EmptyState({ title, text, action, href }) { return <div className="inline-empty"><div className="empty-icon small">○</div><strong>{title}</strong><p>{text}</p><Link className="secondary-button" to={href}>{action}</Link></div>; }
+
+function ChallengeProgress({ challenge }) {
+  const current = lifecycleIndex(challenge.status);
+  return <div className="progress-card"><div className="progress-card-head"><div><span className="challenge-id">{challenge.id}</span><h3>{challenge.title}</h3><p>{challenge.district} · Priority: <strong>{challenge.priority}</strong></p></div><span className="status-badge">{challenge.status}</span></div><div className="progress-track">{CHALLENGE_LIFECYCLE.map((step, i) => <div key={step} className={`progress-step ${i < current ? "done" : ""} ${i === current ? "current" : ""}`}><span>{i < current ? "✓" : i + 1}</span><small>{step}</small></div>)}</div><div className="progress-explain"><strong>Current stage: {challenge.status}</strong><span>{progressMessage(challenge.status)}</span></div></div>;
+}
+function progressMessage(status) {
+  const messages = {
+    "Initial Screening": "Your submission has been received and is being screened for completeness and relevance.",
+    "Government Validation": "The responsible government authority is reviewing and validating the problem.",
+    "Under Review": "Your challenge is currently being evaluated before the next pathway is selected.",
+    "Validated": "The challenge has been validated and can move toward a suitable resolution pathway."
+  };
+  return messages[status] || "Your challenge is moving through the Sahaya ecosystem.";
+}
+
+function ReportProblem() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [submissions, setSubmissions] = useState(getCitizenSubmissions);
+  const [step, setStep] = useState(1);
+  const [form, setForm] = useState({ title: "", description: "", priority: "Medium", affected: "", duration: "", district: "Ranchi", locality: "", location: "", landmark: "", population: "", groups: "", impactAreas: [] });
+  const [media, setMedia] = useState([]);
+  const [voice, setVoice] = useState(null);
+  const [recording, setRecording] = useState(false);
+  const [error, setError] = useState("");
+  const [submitted, setSubmitted] = useState(null);
+  const mediaInput = useRef(null); const recorderRef = useRef(null); const chunksRef = useRef([]);
+  const weekCount = weeklySubmissionCount(submissions);
+  const remaining = Math.max(CITIZEN_WEEKLY_LIMIT - weekCount, 0);
+
+  const update = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+  const addMedia = (e) => {
+    const selected = Array.from(e.target.files || []);
+    if (media.length + selected.length > 3) { setError("You can attach a maximum of 3 photos/videos per problem statement."); e.target.value = ""; return; }
+    const invalid = selected.find((file) => !file.type.startsWith("image/") && !file.type.startsWith("video/"));
+    if (invalid) { setError("Only photos and videos are supported in this evidence section."); return; }
+    setError(""); setMedia((current) => [...current, ...selected].map((file) => ({ name: file.name, type: file.type, size: file.size })));
+    e.target.value = "";
+  };
+  const removeMedia = (name) => setMedia((items) => items.filter((item) => item.name !== name));
+
+  const startRecording = async () => {
+    setError("");
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { setError("Voice recording is not supported by this browser. You can attach an audio file instead."); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream); recorderRef.current = recorder; chunksRef.current = [];
+      recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data); };
+      recorder.onstop = () => { setVoice({ name: `voice-message-${Date.now()}.webm`, type: "audio/webm", recorded: true }); stream.getTracks().forEach(t => t.stop()); setRecording(false); };
+      recorder.start(); setRecording(true);
+    } catch { setError("Microphone permission was not granted. You can continue without a voice message."); }
+  };
+  const stopRecording = () => recorderRef.current?.stop();
+
+  const next = () => {
+    setError("");
+    if (step === 1 && (!form.title.trim() || !form.description.trim())) { setError("Please enter a problem statement title and description."); return; }
+    if (step === 2 && (!form.district || !form.locality.trim() || !form.location.trim())) { setError("Please provide the district, village/town/ward and specific location."); return; }
+    if (step < 5) setStep(step + 1);
+  };
+  const submit = () => {
+    if (remaining <= 0) { setError("You have reached the weekly limit of 3 problem statements. You can submit again next week."); return; }
+    const number = 128 + submissions.length + 1;
+    const challenge = { id: `SC-2026-${String(number).padStart(5, "0")}`, title: form.title, description: form.description, priority: form.priority, status: "Initial Screening", district: form.district, locality: form.locality, specificLocation: form.location, landmark: form.landmark, affectedPopulation: Number(form.population) || 0, affectedGroups: form.groups, impactAreas: form.impactAreas, mediaCount: media.length, voiceMessage: Boolean(voice), submittedBy: user.id, createdAt: new Date().toISOString() };
+    const nextItems = [challenge, ...submissions]; setSubmissions(nextItems); saveCitizenSubmissions(nextItems); setSubmitted(challenge);
+  };
+
+  if (submitted) return <section className="center-page"><div className="success-card submission-success"><div className="success-icon">✓</div><div className="eyebrow">CHALLENGE SUBMITTED</div><h1>Problem statement received</h1><p>Your community problem has entered <strong>Initial Screening</strong>.</p><div className="submission-id"><span>Challenge ID</span><strong>{submitted.id}</strong></div><ChallengeProgress challenge={submitted} /><div className="button-row"><Link className="primary-button" to="/citizen">Back to Citizen Home</Link><Link className="secondary-button" to="/citizen/my-challenges">Track my challenges</Link></div></div></section>;
+
+  return <section className="report-page"><div className="report-header"><div><div className="eyebrow">REPORT A COMMUNITY PROBLEM · PS 26043</div><h1>Submit a problem statement</h1><p>Help Sahaya understand a local issue. You can submit up to <strong>{CITIZEN_WEEKLY_LIMIT} problem statements per week.</strong></p></div><div className="limit-chip">{weekCount}/{CITIZEN_WEEKLY_LIMIT} used this week</div></div>
+    {remaining === 0 ? <div className="limit-block"><strong>Weekly submission limit reached</strong><p>You have already submitted {CITIZEN_WEEKLY_LIMIT} problem statements this week. The limit resets at the start of next week.</p><Link className="secondary-button" to="/citizen">Return to Home</Link></div> : <>
+      <div className="stepper">{["Describe", "Location", "Evidence", "Community Impact", "Review & Submit"].map((label, i) => <div key={label} className={`stepper-item ${i + 1 === step ? "active" : ""} ${i + 1 < step ? "done" : ""}`}><span>{i + 1 < step ? "✓" : i + 1}</span><small>{label}</small></div>)}</div>
+      <div className="report-card">
+        {step === 1 && <div className="form-section"><SectionTitle title="Describe the problem" subtitle="Use everyday language. You do not need to choose a technical category." /><label>Problem statement / title<input value={form.title} onChange={(e) => update("title", e.target.value)} placeholder="Example: Drinking water is unavailable in our village" /></label><label>Description<textarea value={form.description} onChange={(e) => update("description", e.target.value)} placeholder="What is happening? What have you observed?" rows="6" /></label><div className="two-col"><label>Priority<select value={form.priority} onChange={(e) => update("priority", e.target.value)}><option>Low</option><option>Medium</option><option>High</option><option>Critical</option></select><small className="field-help">Choose how urgent the issue feels to your community.</small></label><label>Who is affected?<input value={form.affected} onChange={(e) => update("affected", e.target.value)} placeholder="Students, farmers, elderly residents..." /></label></div><label>How long has this been happening?<input value={form.duration} onChange={(e) => update("duration", e.target.value)} placeholder="Example: 6 months" /></label></div>}
+        {step === 2 && <div className="form-section"><SectionTitle title="Where is the problem?" subtitle="Location helps the platform route a validated challenge to the responsible authority." /><div className="two-col"><label>District<select value={form.district} onChange={(e) => update("district", e.target.value)}><option>Ranchi</option><option>Dhanbad</option><option>Khunti</option><option>Jamshedpur</option><option>Hazaribagh</option><option>Gumla</option><option>Simdega</option><option>Deoghar</option></select></label><label>Village / Town / Ward<input value={form.locality} onChange={(e) => update("locality", e.target.value)} placeholder="Ward 12 / Village name" /></label></div><label>Specific location<input value={form.location} onChange={(e) => update("location", e.target.value)} placeholder="Road, school, handpump, health centre, etc." /></label><label>Landmark (optional)<input value={form.landmark} onChange={(e) => update("landmark", e.target.value)} placeholder="Near the primary school" /></label><div className="map-placeholder"><span>⌖</span><div><strong>Map location (optional)</strong><p>Map picker placeholder for the frontend prototype. Exact sensitive locations can remain private.</p></div><button type="button" className="secondary-button">Add map pin</button></div></div>}
+        {step === 3 && <div className="form-section"><SectionTitle title="Add evidence" subtitle="Photos and videos make the problem easier to validate. You can add up to 3 media files in total." /><div className="upload-box" onClick={() => mediaInput.current?.click()}><div className="upload-icon">＋</div><strong>Add photos or videos</strong><p>PNG, JPG, MP4 and other browser-supported formats · Maximum 3 files</p><span>{media.length}/3 selected</span><input ref={mediaInput} hidden type="file" accept="image/*,video/*" multiple onChange={addMedia} /></div>{media.length > 0 && <div className="media-list">{media.map((file) => <div className="media-item" key={file.name}><span>{file.type.startsWith("video/") ? "▶" : "▧"}</span><div><strong>{file.name}</strong><small>{file.type.startsWith("video/") ? "Video" : "Photo"}</small></div><button type="button" className="remove-button" onClick={() => removeMedia(file.name)}>Remove</button></div>)}</div>}
+          <div className="voice-box"><div><strong>Voice message (optional)</strong><p>Explain the issue in your own words. This is a frontend recording preview.</p></div>{recording ? <button type="button" className="primary-button recording" onClick={stopRecording}>● Stop recording</button> : <button type="button" className="secondary-button" onClick={startRecording}>🎙 Record voice</button>}{voice && <div className="voice-ready">✓ {voice.name}</div>}</div>
+        </div>}
+        {step === 4 && <div className="form-section"><SectionTitle title="Community impact" subtitle="Help reviewers understand the scale of the issue." /><div className="two-col"><label>Approximate affected population<input type="number" min="0" value={form.population} onChange={(e) => update("population", e.target.value)} placeholder="Example: 250" /></label><label>Affected groups<input value={form.groups} onChange={(e) => update("groups", e.target.value)} placeholder="Children, farmers, households..." /></label></div><label>Impact areas</label><div className="chip-grid">{["Health", "Education", "Livelihoods", "Water", "Environment", "Accessibility", "Public services", "Safety"].map((item) => <button type="button" key={item} className={`choice-chip ${form.impactAreas.includes(item) ? "selected" : ""}`} onClick={() => update("impactAreas", form.impactAreas.includes(item) ? form.impactAreas.filter(x => x !== item) : [...form.impactAreas, item])}>{form.impactAreas.includes(item) ? "✓ " : ""}{item}</button>)}</div></div>}
+        {step === 5 && <ReviewSubmission form={form} media={media} voice={voice} />}
+        {error && <div className="form-error" role="alert">{error}</div>}
+        <div className="report-actions">{step > 1 ? <button className="secondary-button" type="button" onClick={() => setStep(step - 1)}>Back</button> : <Link className="secondary-button" to="/citizen">Cancel</Link>}{step < 5 ? <button className="primary-button" type="button" onClick={next}>Continue</button> : <button className="primary-button" type="button" onClick={submit}>Submit Problem Statement</button>}</div>
+      </div>
+    </>}
+  </section>;
+}
+
+function SectionTitle({ title, subtitle }) { return <div className="section-title"><h2>{title}</h2><p>{subtitle}</p></div>; }
+function ReviewSubmission({ form, media, voice }) { return <div className="form-section"><SectionTitle title="Review & submit" subtitle="Check your information before sending the problem statement for Initial Screening." /><div className="review-grid"><ReviewItem label="Problem statement" value={form.title} /><ReviewItem label="Description" value={form.description} /><ReviewItem label="Priority" value={form.priority} /><ReviewItem label="Location" value={`${form.district} · ${form.locality} · ${form.location}`} /><ReviewItem label="Affected population" value={form.population || "Not specified"} /><ReviewItem label="Impact areas" value={form.impactAreas.join(", ") || "Not specified"} /><ReviewItem label="Evidence" value={`${media.length} photo/video file${media.length === 1 ? "" : "s"}${voice ? " + voice message" : ""}`} /></div><div className="privacy-note"><strong>Before you submit:</strong> Your public challenge view will focus on the problem, appropriate location, evidence and impact. Personal contact details and sensitive information remain private.</div></div>; }
+function ReviewItem({ label, value }) { return <div className="review-item"><span>{label}</span><strong>{value}</strong></div>; }
+
+
+function CitizenChallengeDetail() {
+  const { data } = useAuth();
+  const { id } = useParams();
+  const challenge = data.mockChallenges.find(c => c.id === id) || getCitizenSubmissions().find(c => c.id === id);
+  const [supported, setSupported] = useState(() => localStorage.getItem(`sahaya_support_${id}`) === "1");
+  if (!challenge) return <section className="empty-page"><div className="empty-icon">?</div><h1>Challenge not found</h1><p>This challenge may have been removed or is not available to your account.</p><Link className="primary-button" to="/citizen/challenges">Back to Community Challenges</Link></section>;
+  const toggleSupport = () => { const next = !supported; setSupported(next); localStorage.setItem(`sahaya_support_${id}`, next ? "1" : "0"); };
+  return <section className="workspace challenge-detail-page">
+    <div className="breadcrumb"><Link to="/citizen/challenges">Community Challenges</Link><span>›</span><span>{challenge.id}</span></div>
+    <div className="detail-header"><div><div className="eyebrow">CHALLENGE {challenge.id}</div><h1>{challenge.title}</h1><p>{challenge.district} · {challenge.locality || "Community"} · {challenge.domain || "Community issue"}</p></div><span className={`priority ${challenge.priority.toLowerCase()}`}>{challenge.priority} priority</span></div>
+    <div className="detail-layout">
+      <div className="detail-main">
+        <section className="panel"><div className="panel-heading"><h2>Problem statement</h2><span>{challenge.status}</span></div><p className="detail-description">{challenge.description || "This community challenge was submitted to Sahaya for structured evaluation and collaborative resolution."}</p><div className="detail-facts"><div><span>People affected</span><strong>{(challenge.affectedPopulation || 0).toLocaleString()}</strong></div><div><span>District</span><strong>{challenge.district}</strong></div><div><span>Priority</span><strong>{challenge.priority}</strong></div></div></section>
+        <section className="panel"><div className="panel-heading"><h2>Progress</h2><span>Transparent tracking</span></div><ChallengeProgress challenge={challenge} /></section>
+        <section className="panel"><div className="panel-heading"><h2>What happens next?</h2></div><div className="next-steps"><div><span>01</span><div><strong>Validation</strong><p>Government reviews the evidence and confirms whether the challenge is valid.</p></div></div><div><span>02</span><div><strong>Resolution pathway</strong><p>The responsible authority decides whether government action, research, innovation or collaboration is appropriate.</p></div></div><div><span>03</span><div><strong>Capability matching</strong><p>Universities, startups and other partners may be invited when their capabilities are needed.</p></div></div></div></section>
+      </div>
+      <aside className="detail-side"><section className="panel"><div className="panel-heading"><h2>Community signal</h2></div><p className="side-copy">If you are also affected, add your support as a community signal. This does not automatically increase government priority.</p><button className={`secondary-button full ${supported ? "selected-button" : ""}`} onClick={toggleSupport}>{supported ? "✓ I'm also affected" : "I'm also affected"}</button></section><section className="panel"><div className="panel-heading"><h2>Public information</h2></div><ul className="detail-list"><li>Personal phone and email are not shown publicly.</li><li>Exact sensitive locations can remain private.</li><li>Evidence is visible only according to access permissions.</li></ul></section></aside>
+    </div>
+  </section>;
+}
+
+function CitizenNotifications() {
+  const { data } = useAuth();
+  const notifications = data.mockNotifications.filter(n => n.role === "citizen");
+  const submissions = getCitizenSubmissions();
+  const dynamic = submissions.map(s => ({ id: `local-${s.id}`, title: `${s.id} is now in Initial Screening`, body: `Your problem statement “${s.title}” has been received and is being screened.`, createdAt: s.createdAt, unread: true }));
+  const items = [...dynamic, ...notifications];
+  return <section className="workspace"><div className="workspace-header"><div><div className="eyebrow">NOTIFICATIONS</div><h1>Updates about your community problems</h1><p>Important status changes and ecosystem updates appear here.</p></div></div><div className="notification-list">{items.length ? items.map(n => <article className={`notification-card ${n.unread ? "unread" : ""}`} key={n.id}><div className="notification-dot">•</div><div><strong>{n.title || n.message}</strong><p>{n.body || n.message || "Sahaya has an update for you."}</p><small>{new Date(n.createdAt || Date.now()).toLocaleString()}</small></div></article>) : <section className="panel"><EmptyState title="No notifications yet" text="You'll see status changes when your submitted challenges move through the Sahaya lifecycle." action="Report a Problem" href="/citizen/report" /></section>}</div></section>;
+}
+
+function CitizenProfile() {
+  const { user } = useAuth();
+  return <section className="workspace"><div className="workspace-header"><div><div className="eyebrow">PROFILE</div><h1>Your citizen profile</h1><p>Manage the basic information used for your Sahaya account.</p></div></div><div className="profile-grid"><section className="panel profile-card"><div className="avatar">{user.name.split(" ").map(x => x[0]).slice(0,2).join("")}</div><h2>{user.name}</h2><span className="status-badge">Citizen</span><div className="profile-fields"><div><span>Email / Mobile</span><strong>{user.email || user.contact || "Demo citizen account"}</strong></div><div><span>District</span><strong>{user.district || "Ranchi"}</strong></div></div></section><section className="panel"><div className="panel-heading"><h2>Privacy</h2></div><ul className="check-list"><li>Your personal contact details are not displayed on public challenge cards.</li><li>Exact sensitive locations are not required for public discovery.</li><li>Government officers receive only information needed for validation and routing.</li><li>Prototype data is stored locally in this browser.</li></ul></section></div></section>;
+}
+
+function CitizenChallenges() { const { data } = useAuth(); return <section className="workspace"><div className="workspace-header"><div><div className="eyebrow">COMMUNITY CHALLENGES</div><h1>Problems from communities</h1><p>Explore public challenges available for the innovation ecosystem.</p></div></div><div className="challenge-grid">{data.mockChallenges.filter(c => c.visibleTo.includes("citizen")).map(c => <Link className="challenge-card" to={`/citizen/challenges/${c.id}`} key={c.id}><div className="challenge-card-top"><span className="challenge-id">{c.id}</span><span className={`priority ${c.priority.toLowerCase()}`}>{c.priority}</span></div><h3>{c.title}</h3><p>{c.district} · {c.domain}</p><div className="challenge-impact"><strong>{c.affectedPopulation.toLocaleString()}</strong><span>people affected</span></div><div className="challenge-card-bottom"><span className="status-badge">{c.status}</span><span>View challenge →</span></div></Link>)}</div></section>; }
+function MyChallenges() { const { user, data } = useAuth(); const submissions = getCitizenSubmissions(); const items = [...submissions, ...data.mockChallenges.filter(c => c.submittedBy === user.id)]; return <section className="workspace"><div className="workspace-header"><div><div className="eyebrow">MY CHALLENGES</div><h1>Track your problem statements</h1><p>Follow each submission through validation, matching, solution and impact.</p></div><Link className="primary-button" to="/citizen/report">+ Submit a Problem</Link></div>{items.length ? <div className="tracking-list">{items.map(c => <div className="tracking-card" key={c.id}><ChallengeProgress challenge={c} /></div>)}</div> : <section className="panel"><EmptyState title="You haven't submitted any challenges yet." text="Start by reporting a local problem that your community is facing." action="Report a Problem" href="/citizen/report" /></section>}</section>; }
+
+function WorkspaceFoundation({ role }) { const { data } = useAuth(); const roleChallenges = data.mockChallenges.filter(c => c.visibleTo.includes(role)); const notifications = data.mockNotifications.filter(n => n.role === role); return <section className="workspace"><div className="workspace-header"><div><div className="eyebrow">FOUNDATION WORKSPACE</div><h1>{roleLabels[role]} workspace foundation</h1><p>Phase 1 shell is ready. Role-specific dashboards and workflows are intentionally deferred.</p></div><span className="status-badge">Mock session active</span></div><div className="info-banner"><strong>Central object: Challenge.</strong><span>This shell is prepared for the shared lifecycle: submission → validation → matching → collaboration → project → impact.</span></div><div className="metric-grid"><Metric label="Visible challenges" value={roleChallenges.length} /><Metric label="Mock organizations" value={data.mockOrganizations.length} /><Metric label="Active projects" value={data.mockProjects.filter(p => p.status === "active").length} /><Metric label="Notifications" value={notifications.length} /></div><div className="foundation-grid"><section className="panel"><div className="panel-heading"><h2>Shared challenge model</h2><span>Phase 1</span></div><div className="lifecycle">{CHALLENGE_LIFECYCLE.map((x, i) => <div className={i === 0 ? "lifecycle-step current" : "lifecycle-step"} key={x}><span>{i + 1}</span>{x}</div>)}</div></section><section className="panel"><div className="panel-heading"><h2>Role permissions</h2><span>Prototype</span></div><ul className="check-list"><li>Route access through <code>/{role}/*</code></li><li>Role selected from mock authenticated user</li><li>Unauthorized role access redirects safely</li><li>Organization data remains separate from users</li></ul></section></div></section>; }
+function Metric({ label, value }) { return <div className="metric-card"><span>{label}</span><strong>{value}</strong></div>; }
+function PlaceholderPage({ title }) { return <section className="empty-page"><div className="empty-icon">◌</div><h1>{title}</h1><p>This route is reserved for a later implementation phase.</p></section>; }
+function Unauthorized() { return <section className="empty-page"><div className="empty-icon">!</div><h1>Access restricted</h1><p>Your mock account does not have permission to access this workspace.</p><Link className="primary-button" to="/login">Return to login</Link></section>; }
+
+function App() { return <AuthProvider><AppShell><Routes>
+  <Route path="/login" element={<LoginPage />} />
+  <Route path="/register/:role" element={<RegisterPage />} />
+  <Route path="/unauthorized" element={<Unauthorized />} />
+  <Route path="/citizen" element={<RoleGuard allowed={["citizen"]}><CitizenHome /></RoleGuard>} />
+  <Route path="/citizen/report" element={<RoleGuard allowed={["citizen"]}><ReportProblem /></RoleGuard>} />
+  <Route path="/citizen/challenges" element={<RoleGuard allowed={["citizen"]}><CitizenChallenges /></RoleGuard>} />
+  <Route path="/citizen/challenges/:id" element={<RoleGuard allowed={["citizen"]}><CitizenChallengeDetail /></RoleGuard>} />
+  <Route path="/citizen/my-challenges" element={<RoleGuard allowed={["citizen"]}><MyChallenges /></RoleGuard>} />
+  <Route path="/citizen/notifications" element={<RoleGuard allowed={["citizen"]}><CitizenNotifications /></RoleGuard>} />
+  <Route path="/citizen/profile" element={<RoleGuard allowed={["citizen"]}><CitizenProfile /></RoleGuard>} />
+  <Route path="/government" element={<RoleGuard allowed={["government"]}><WorkspaceFoundation role="government" /></RoleGuard>} />
+  <Route path="/university" element={<RoleGuard allowed={["university"]}><WorkspaceFoundation role="university" /></RoleGuard>} />
+  <Route path="/startup" element={<RoleGuard allowed={["startup"]}><WorkspaceFoundation role="startup" /></RoleGuard>} />
+  <Route path="/industry" element={<RoleGuard allowed={["industry"]}><WorkspaceFoundation role="industry" /></RoleGuard>} />
+  {['government','university','startup','industry'].flatMap(role => [
+    <Route key={`${role}-challenges`} path={`/${role}/challenges`} element={<RoleGuard allowed={[role]}><PlaceholderPage title="Challenges" /></RoleGuard>} />,
+    <Route key={`${role}-projects`} path={`/${role}/projects`} element={<RoleGuard allowed={[role]}><PlaceholderPage title="Projects" /></RoleGuard>} />,
+    <Route key={`${role}-notifications`} path={`/${role}/notifications`} element={<RoleGuard allowed={[role]}><PlaceholderPage title="Notifications" /></RoleGuard>} />
+  ])}
+  <Route path="/" element={<Navigate to="/login" replace />} /><Route path="*" element={<Navigate to="/login" replace />} />
+</Routes></AppShell></AuthProvider>; }
+
+createRoot(document.getElementById("root")).render(<React.StrictMode><BrowserRouter><App /></BrowserRouter></React.StrictMode>);
