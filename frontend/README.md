@@ -31,6 +31,25 @@ npm install
 npm run dev
 ```
 
+## Backend connection
+
+Start the FastAPI backend before submitting a citizen problem statement:
+
+```powershell
+cd ../backend
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+The frontend sends citizen submissions to `http://127.0.0.1:8000/api/problems`.
+To use another backend URL, create `frontend/.env.local` with:
+
+```text
+VITE_API_URL=http://127.0.0.1:8000
+```
+
 ## Prototype storage
 Citizen submissions are stored in browser localStorage under `sahaya_citizen_submissions`.
 Media files are previewed locally during the session; a production implementation should replace this with the planned file-storage/API layer.

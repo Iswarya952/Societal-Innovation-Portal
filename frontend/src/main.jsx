@@ -16,6 +16,7 @@ import { communityOrganizationProfile, communityOrganizationProfileSections, com
 import { localBodyProfile, localBodyProfileSections, localBodyChallenges, localBodyNotifications, localBodyLifecycle, localBodyReportTemplates } from "./mock/localBody";
 import { LocalBodyHome as LocalBodyHomeView, LocalBodyReport as LocalBodyReportView, LocalBodyChallenges as LocalBodyChallengesView, LocalBodyChallengeDetail as LocalBodyChallengeDetailView, LocalBodyReports as LocalBodyReportsView, LocalBodyNotifications as LocalBodyNotificationsView, LocalBodyProfile as LocalBodyProfileView } from "./localBody";
 import { GovernmentHome, GovernmentReport, GovernmentChallenges, GovernmentChallengeDetail, GovernmentMatching, GovernmentProposals, GovernmentProjects, GovernmentEscalations, GovernmentReports, GovernmentNotifications, GovernmentProfile } from "./government";
+import { submitProblem } from "./api";
 
 const CITIZEN_WEEKLY_LIMIT = 3;
 const CHALLENGE_LIFECYCLE = [
@@ -654,11 +655,25 @@ function ReportProblem() {
   const stopRecording = () => recorderRef.current?.stop();
   const addVoiceFile = (e) => { const file = e.target.files?.[0]; if (!file) return; if (!file.type.startsWith("audio/")) { setError("Please select an audio file for the voice message."); return; } setVoice({ name: file.name, type: file.type, recorded: false, size: file.size, url: URL.createObjectURL(file) }); e.target.value = ""; };
   const next = () => { setError(""); if (step === 1 && (!form.title.trim() || !form.description.trim())) { setError("Please enter both the problem statement/title and a description."); return; } if (step === 2 && (!form.district || !form.locality.trim() || !form.location.trim())) { setError("Please provide district, village/town/ward and the specific location."); return; } if (step < 4) setStep(step + 1); };
-  const submit = () => {
+  const submit = async () => {
     setError(""); if (remaining <= 0) { setError(`Weekly limit reached. You can submit only ${CITIZEN_WEEKLY_LIMIT} problem statements per week.`); return; }
-    const now = new Date().toISOString(); const number = 128 + getCitizenSubmissions().length + 1; const ai = mockAiAnalysis(form);
-    const challenge = { id: `SC-2026-${String(number).padStart(5, "0")}`, title: form.title.trim(), description: form.description.trim(), priority: form.priority, status: "Initial Screening", district: form.district, locality: form.locality, specificLocation: form.location, landmark: form.landmark, mapLocation: form.mapLocation, affected: form.affected, duration: form.duration, mediaCount: media.length, media: media.map(({ name, type, size }) => ({ name, type, size })), documents: documents.map(({ name, type, size }) => ({ name, type, size })), voiceMessage: Boolean(voice), voiceName: voice?.name || "", submittedBy: user.id, createdAt: now, aiAnalysis: ai, supportCount: 0 };
-    const nextItems = [challenge, ...getCitizenSubmissions(user.id)]; setSubmissions(nextItems); saveCitizenSubmissions(nextItems); setSubmitted(challenge);
+    try {
+      const now = new Date().toISOString();
+      const result = await submitProblem({
+        title: form.title.trim(),
+        description: form.description.trim(),
+        priority: form.priority,
+        district: form.district,
+        village: form.locality.trim(),
+        language: "English",
+        evidence_type: media.length || voice || documents.length ? "Evidence attached" : "Text only",
+        affected_population: Number.parseInt(form.affected, 10) || 0
+      });
+      const challenge = { id: result.problem_id, title: form.title.trim(), description: form.description.trim(), priority: form.priority, status: "Initial Screening", district: form.district, locality: form.locality, specificLocation: form.location, landmark: form.landmark, mapLocation: form.mapLocation, affected: form.affected, duration: form.duration, mediaCount: media.length, media: media.map(({ name, type, size }) => ({ name, type, size })), documents: documents.map(({ name, type, size }) => ({ name, type, size })), voiceMessage: Boolean(voice), voiceName: voice?.name || "", submittedBy: user.id, createdAt: now, aiAnalysis: { domain: result.classification?.domain, confidence: result.classification?.confidence, possibleDuplicates: result.possible_duplicates || [] }, supportCount: 0 };
+      const nextItems = [challenge, ...getCitizenSubmissions(user.id)]; setSubmissions(nextItems); saveCitizenSubmissions(nextItems); setSubmitted(challenge);
+    } catch (requestError) {
+      setError(`Could not reach the backend. ${requestError.message}`);
+    }
   };
   if (submitted) return <section className="center-page"><div className="success-card submission-success"><div className="success-icon">✓</div><div className="eyebrow">CHALLENGE SUBMITTED</div><h1>Problem statement received</h1><p>Your community problem has entered <strong>Initial Screening</strong>. You have <strong>{Math.max(CITIZEN_WEEKLY_LIMIT - weeklySubmissionCount(getCitizenSubmissions(user.id)), 0)}</strong> submission(s) remaining this week.</p><div className="submission-id"><span>Challenge ID</span><strong>{submitted.id}</strong></div><ChallengeProgress challenge={submitted} /><div className="button-row"><Link className="primary-button" to="/citizen">Back to Citizen Home</Link><Link className="secondary-button" to="/citizen/my-challenges">Track my challenges</Link></div></div></section>;
   return <section className="report-page"><div className="report-header"><div><div className="eyebrow">REPORT A COMMUNITY PROBLEM · PS 26043</div><h1>Submit a problem statement</h1><p>Describe the issue naturally. Sahaya will later assist with domain, priority, duplicate, jurisdiction and capability analysis.</p></div><div className="limit-chip"><strong>{weekCount}/{CITIZEN_WEEKLY_LIMIT}</strong><span>used this week</span></div></div>
